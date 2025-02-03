@@ -1,124 +1,79 @@
-class Group14:
+import random
+
+from negmas.outcomes import Outcome
+from negmas.sao import ResponseType, SAONegotiator, SAOResponse, SAOState
+
+
+class Group14(SAONegotiator):
     """
-    A negotiation agent designed for bilateral negotiations using the NegMAS platform.
+    Intelligent Negotiation Agent for ANAC 2024.
+    Implements offering and acceptance strategies while adapting to opponent behavior.
     """
 
-    def __init__(self):
-        self.agent_name = "Group14"
-        self.opponent_model = None
-        self.initial_utility_threshold = 0.7
-        self.final_utility_threshold = 0.4
-        self.total_utility = 0
-        self.num_offers_accepted = 0
+    rational_outcomes = tuple()
+    partner_reserved_value = 0
 
-    def initialize(self):
+    def on_preferences_changed(self, changes):
         """
-        Method to initialize the agent before starting a negotiation session.
+        Called when preferences change. Used to initialize the agent.
         """
-        print(f"{self.agent_name} is initialized.")
+        if self.ufun is None:
+            return
 
-    def propose(self, current_offer, time_remaining=1.0):
+        self.rational_outcomes = [
+            _ for _ in self.nmi.outcome_space.enumerate_or_sample()
+            if self.ufun(_) > self.ufun.reserved_value
+        ]
+
+        self.partner_reserved_value = self.ufun.reserved_value
+
+    def __call__(self, state: SAOState) -> SAOResponse:
         """
-        Generate a counter-offer during negotiations.
-        :param current_offer: The offer made by the opponent.
-        :param time_remaining: A float between 0 and 1 representing the remaining time.
-        :return: A counter-offer.
+        Main negotiation loop. Determines whether to accept, reject, or propose a counteroffer.
         """
-        self.update_opponent_model(current_offer)
+        offer = state.current_offer
+        self.update_partner_reserved_value(state)
 
-        # Predict opponent preferences
-        predicted_preferences = self.predict_opponent_preferences()
+        if self.ufun is None:
+            return SAOResponse(ResponseType.END_NEGOTIATION, None)
 
-        # Start with an initial offer if no current offer
-        if not current_offer:
-            return {"price": 100, "quality": "high"}
+        if self.acceptance_strategy(state):
+            return SAOResponse(ResponseType.ACCEPT_OFFER, offer)
 
-        # Generate counter-offer with time-based concessions
-        new_offer = current_offer.copy()
-        for key, value in predicted_preferences.items():
-            if key == "price":
-                # Concede more aggressively as time_remaining decreases
-                initial_price = 100  # Example: Starting price
-                minimum_price = 50  # Example: Minimum acceptable price
-                concession_rate = (initial_price - minimum_price) * (1 - time_remaining)
-                new_offer[key] = max(minimum_price, current_offer[key] - concession_rate)
-            else:
-                # Align with opponent's preferences on non-price attributes
-                new_offer[key] = value
-        return new_offer
+        return SAOResponse(ResponseType.REJECT_OFFER, self.bidding_strategy(state))
 
-    def accept(self, current_offer, time_remaining=1.0):
+    def acceptance_strategy(self, state: SAOState) -> bool:
         """
-        Decide whether to accept an offer.
-        :param current_offer: The offer made by the opponent.
-        :param time_remaining: A float between 0 and 1 representing the remaining time.
-        :return: True if the offer is acceptable, False otherwise.
+        Determines whether to accept an offer.
+        Accept if the offer is significantly better than the reservation value.
         """
-        if not current_offer:
-            return False
+        assert self.ufun
+        offer = state.current_offer
+        threshold = self.ufun.reserved_value + (1.5 * (1 - state.relative_time))
+        return self.ufun(offer) > threshold
 
-        # Predict opponent preferences
-        predicted_preferences = self.predict_opponent_preferences()
-
-        # Calculate utility of the offer based on predicted preferences
-        utility = 0
-        for key, value in current_offer.items():
-            if predicted_preferences.get(key) == value:
-                utility += 0.5  # Assign a weight for matching preferences
-
-            # Calculate dynamic threshold
-            threshold = self.initial_utility_threshold * time_remaining + self.final_utility_threshold * (1 - time_remaining)
-
-        accepted = utility >= threshold
-        if accepted:
-            self.total_utility += utility
-            self.num_offers_accepted += 1
-        return accepted
-
-    def get_metrics(self):
+    def bidding_strategy(self, state: SAOState) -> Outcome | None:
         """
-        Retrieve performance metrics for the agent.
+        Generates a counteroffer by selecting an outcome above the opponent’s estimated reservation value.
         """
-        avg_utility = self.total_utility / max(1, self.num_offers_accepted)
-        return {"total_utility": self.total_utility, "average_utility": avg_utility}
+        valid_outcomes = [o for o in self.rational_outcomes if self.opponent_ufun(o) > self.partner_reserved_value]
+        return random.choice(valid_outcomes) if valid_outcomes else None
 
-    def update_opponent_model(self, offer):
+    def update_partner_reserved_value(self, state: SAOState) -> None:
         """
-        Update the opponent's model based on their offers.
-        :param offer: The opponent's offer.
+        Updates the estimated reservation value of the opponent based on its offers.
         """
-        if not self.opponent_model:
-            self.opponent_model = {"offer_history": [], "frequency": {}}
-
-        # Record the offer
-        self.opponent_model["offer_history"].append(offer)
-
-        # Update frequency counts for each key-value pair in the offer
-        for key, value in offer.items():
-            if key not in self.opponent_model["frequency"]:
-                self.opponent_model["frequency"][key] = {}
-            if value not in self.opponent_model["frequency"][key]:
-                self.opponent_model["frequency"][key][value] = 0
-            self.opponent_model["frequency"][key][value] += 1
-
-    def predict_opponent_preferences(self):
-        """
-        Predict the opponent's preferences based on their offer history.
-        :return: A dictionary of predicted preferences.
-        """
-        if not self.opponent_model:
-            return {}
-
-        # Estimate preferences based on frequency
-        preferences = {}
-        for key, value_counts in self.opponent_model["frequency"].items():
-            preferences[key] = max(value_counts, key=value_counts.get)  # Most frequent value
-        return preferences
+        assert self.ufun and self.opponent_ufun
+        offer = state.current_offer
+        if self.opponent_ufun(offer) < self.partner_reserved_value:
+            self.partner_reserved_value = float(self.opponent_ufun(offer)) / 2
+        self.rational_outcomes = [o for o in self.rational_outcomes if self.opponent_ufun(o) > self.partner_reserved_value]
 
 
 if __name__ == "__main__":
-    # Example usage for testing
-    agent = Group14()
-    agent.initialize()
-    print(agent.propose(None))
-    print(agent.accept({"offer": "example_offer"}))
+    from .helpers.runner import run_a_tournament
+
+    run_a_tournament(Group14, small=True)
+
+
+# python -m group14.group14
