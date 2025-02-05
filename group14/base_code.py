@@ -12,7 +12,6 @@ class Group14(SAONegotiator):
 
     rational_outcomes = tuple()
     partner_reserved_value = 0
-    state_utilities = {}
 
     def on_preferences_changed(self, changes):
         """
@@ -22,12 +21,11 @@ class Group14(SAONegotiator):
             return
 
         self.rational_outcomes = [
-            outcome for outcome in self.nmi.outcome_space.enumerate_or_sample()
-            if self.ufun(outcome) > self.ufun.reserved_value
+            _ for _ in self.nmi.outcome_space.enumerate_or_sample()
+            if self.ufun(_) > self.ufun.reserved_value
         ]
 
         self.partner_reserved_value = self.ufun.reserved_value
-        self.state_utilities = self.value_iteration(gamma=0.9, epsilon=0.01)
 
     def __call__(self, state: SAOState) -> SAOResponse:
         """
@@ -47,26 +45,19 @@ class Group14(SAONegotiator):
     def acceptance_strategy(self, state: SAOState) -> bool:
         """
         Determines whether to accept an offer.
-        Accepts if the offer exceeds a dynamic threshold based on negotiation progress.
+        Accept if the offer is significantly better than the reservation value.
         """
         assert self.ufun
         offer = state.current_offer
-        time_factor = 1.5 * (1 - state.relative_time)
-        threshold = self.ufun.reserved_value + time_factor * (1 - self.ufun.reserved_value)
-        return self.ufun(offer) >= threshold
+        threshold = self.ufun.reserved_value + (1.5 * (1 - state.relative_time))
+        return self.ufun(offer) > threshold
 
     def bidding_strategy(self, state: SAOState) -> Outcome | None:
         """
-        Generates a counteroffer based on Value Iteration computed utilities.
+        Generates a counteroffer by selecting an outcome above the opponent’s estimated reservation value.
         """
         valid_outcomes = [o for o in self.rational_outcomes if self.opponent_ufun(o) > self.partner_reserved_value]
-
-        if not valid_outcomes:
-            return None
-
-        # Select the best outcome based on Value Iteration computed utilities
-        best_outcome = max(valid_outcomes, key=lambda o: self.state_utilities.get(o, 0))
-        return best_outcome
+        return random.choice(valid_outcomes) if valid_outcomes else None
 
     def update_partner_reserved_value(self, state: SAOState) -> None:
         """
@@ -74,37 +65,15 @@ class Group14(SAONegotiator):
         """
         assert self.ufun and self.opponent_ufun
         offer = state.current_offer
-        if offer is None:
-            return
-
-        opponent_offer_value = self.opponent_ufun(offer)
-        if opponent_offer_value < self.partner_reserved_value:
-            self.partner_reserved_value = (self.partner_reserved_value + opponent_offer_value) / 2
-
+        if self.opponent_ufun(offer) < self.partner_reserved_value:
+            self.partner_reserved_value = float(self.opponent_ufun(offer)) / 2
         self.rational_outcomes = [o for o in self.rational_outcomes if self.opponent_ufun(o) > self.partner_reserved_value]
-
-    def value_iteration(self, gamma=0.9, epsilon=0.01):
-        """
-        Value Iteration - https://people.engr.tamu.edu/guni/csce421/files/AI_Russell_Norvig.pdf
-        page 652
-        Implements the Value Iteration algorithm to estimate the best possible outcomes.
-        """
-        U = {outcome: 0 for outcome in self.rational_outcomes}
-        U_prime = U.copy()
-        delta = float('inf')
-
-        while delta >= epsilon * (1 - gamma) / gamma:
-            U = U_prime.copy()
-            delta = 0
-
-            for outcome in self.rational_outcomes:
-                reward = self.ufun(outcome)
-                U_prime[outcome] = reward + gamma * max(U.values(), default=0)
-                delta = max(delta, abs(U_prime[outcome] - U[outcome]))
-
-        return U_prime
 
 
 if __name__ == "__main__":
     from .helpers.runner import run_a_tournament
+
     run_a_tournament(Group14, small=True)
+
+
+# python -m group14.group14
