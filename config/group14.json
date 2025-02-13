@@ -1,0 +1,16 @@
+{
+  "ml_features": [
+    "utility",
+    "advantage",
+    "partner_welfare",
+    "welfare",
+    "time",
+    "nash_optimality",
+    "kalai_optimality",
+    "max_welfare_optimality",
+    "pareto_optimality"
+  ],
+
+  "target_feature": "reserved_value"
+
+}

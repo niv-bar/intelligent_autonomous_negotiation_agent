@@ -171,4 +171,4 @@ cython_debug/
 .pypirc
 
 # Ignore the entire data folder
-data/
+# data/
