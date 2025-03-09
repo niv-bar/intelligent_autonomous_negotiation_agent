@@ -42,7 +42,7 @@ def run_a_tournament(
         DEFAULT_TOURNAMENT_PATH,
         anl2024_tournament,
     )
-    from anl.anl2024.negotiators import Conceder
+    from anl.anl2024.negotiators import Conceder, Boulware
     from negmas.helpers import humanize_time, unique_name
     from rich import print
 
@@ -53,8 +53,8 @@ def run_a_tournament(
         else None
     )
     if small:
-        anl2024_tournament(
-            competitors=tuple([TestedNegotiator, Conceder]),
+        _ = anl2024_tournament(
+            competitors=tuple([TestedNegotiator] + list(DEFAULT_AN2024_COMPETITORS)),
             n_scenarios=1,
             n_outcomes=n_outcomes,
             n_repetitions=1,
@@ -64,7 +64,7 @@ def run_a_tournament(
             name=name,
         ).final_scores
     else:
-        anl2024_tournament(
+        _ = anl2024_tournament(
             competitors=tuple([TestedNegotiator] + list(DEFAULT_AN2024_COMPETITORS)),
             n_scenarios=n_scenarios,
             n_outcomes=n_outcomes,
